@@ -1,0 +1,14 @@
+targets:
+  $default:
+    builders:
+      # Ensure freezed runs before json_serializable
+      freezed:
+        enabled: true
+      json_serializable:
+        enabled: true
+        options:
+          # Generate fromJson/toJson for nullable fields safely
+          explicit_to_json: true
+          field_rename: none
+      riverpod_generator:
+        enabled: true

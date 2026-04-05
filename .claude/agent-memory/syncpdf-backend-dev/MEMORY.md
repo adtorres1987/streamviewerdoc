@@ -1,0 +1,2 @@
+- [Phase 1–5 Implementation](project_phase1.md) — Auth, groups, rooms, payments, webhooks, admin/superadmin REST API complete; key decisions and remaining work
+- [User Profile](user_profile.md) — User is building SyncPDF backend from scratch using documented spec

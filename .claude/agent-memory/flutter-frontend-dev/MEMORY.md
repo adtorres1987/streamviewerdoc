@@ -1,0 +1,4 @@
+- [Phase 6 — Flutter Foundation and Auth](project_phase6_foundation.md) — All auth screens/providers/models created; build_runner not yet run
+- [Phase 7 — Groups, Rooms, and Subscription Guard](project_phase7_groups_rooms.md) — Services/providers/screens for groups, rooms, paywall, invite; JWT key constant added; Phase 8 = WebSocket + PDF viewer
+- [Phase 9 — Stripe Payments and Subscription Flow](project_phase9_payments.md) — PaymentService created; Stripe init in main.dart; paywall/subscription screens enhanced with intl dates, progress bar, PaymentService; group_screen navigates to PDF viewer after room creation
+- [Project Conventions — Flutter SyncPDF](project_conventions.md) — Freezed public variant names, provider naming, routing patterns across files
