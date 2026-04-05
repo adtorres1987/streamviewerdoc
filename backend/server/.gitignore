@@ -3,5 +3,5 @@
 .mcp.json
 *.md
 skills-lock.json
-/backend/server/node_modules/backend/server/.env
+/backend/server/node_modules/
 /backend/server/.env
