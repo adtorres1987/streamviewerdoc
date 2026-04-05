@@ -21,17 +21,17 @@ router.get('/plans', authenticate, checkRole('client', 'admin', 'superadmin'), a
     const { data: plans, error } = await supabase
       .from('plans')
       .select('*')
-      .order('created_at', { ascending: true });
+      .order('price_usd', { ascending: true });
 
     if (error) {
       console.error('[GET /payments/plans] Supabase error:', error);
-      return res.status(500).json({ message: 'Error al obtener los planes.' });
+      return res.status(500).json({ success: false, error: 'Error al obtener los planes.' });
     }
 
     return res.status(200).json({ success: true, data: plans });
   } catch (err) {
     console.error('[GET /payments/plans] Unexpected error:', err);
-    return res.status(500).json({ message: 'Error interno del servidor.' });
+    return res.status(500).json({ success: false, error: 'Error interno del servidor.' });
   }
 });
 
@@ -42,7 +42,7 @@ router.post('/subscribe', authenticate, checkRole('client', 'admin', 'superadmin
   const { planId } = req.body;
 
   if (!planId) {
-    return res.status(400).json({ message: 'planId es requerido.' });
+    return res.status(400).json({ success: false, error: 'planId es requerido.' });
   }
 
   try {
@@ -54,11 +54,11 @@ router.post('/subscribe', authenticate, checkRole('client', 'admin', 'superadmin
       .single();
 
     if (planError || !plan) {
-      return res.status(404).json({ message: 'Plan no encontrado.' });
+      return res.status(404).json({ success: false, error: 'Plan no encontrado.' });
     }
 
     if (!plan.stripe_price_id) {
-      return res.status(422).json({ message: 'El plan no tiene un precio de Stripe configurado.' });
+      return res.status(422).json({ success: false, error: 'El plan no tiene un precio de Stripe configurado.' });
     }
 
     // 2. Get user info for Stripe customer
@@ -69,7 +69,7 @@ router.post('/subscribe', authenticate, checkRole('client', 'admin', 'superadmin
       .single();
 
     if (userError || !user) {
-      return res.status(404).json({ message: 'Usuario no encontrado.' });
+      return res.status(404).json({ success: false, error: 'Usuario no encontrado.' });
     }
 
     // 3. Get or create Stripe customer
@@ -82,7 +82,7 @@ router.post('/subscribe', authenticate, checkRole('client', 'admin', 'superadmin
     if (subError && subError.code !== 'PGRST116') {
       // PGRST116 = no rows returned — that is fine
       console.error('[POST /payments/subscribe] Supabase subscription fetch error:', subError);
-      return res.status(500).json({ message: 'Error al verificar la suscripción.' });
+      return res.status(500).json({ success: false, error: 'Error al verificar la suscripción.' });
     }
 
     let stripeCustomerId = subscription?.stripe_customer_id || null;
@@ -104,16 +104,26 @@ router.post('/subscribe', authenticate, checkRole('client', 'admin', 'superadmin
 
     const trialDays = settings?.value ? parseInt(settings.value, 10) : 15;
 
-    // 5. Create Stripe subscription
+    // 5. Cancel previous Stripe subscription if one already exists
+    if (subscription?.stripe_sub_id) {
+      try {
+        await stripe.subscriptions.cancel(subscription.stripe_sub_id, { prorate: false });
+      } catch (cancelErr) {
+        // Log but do not block — subscription may already be cancelled in Stripe
+        console.warn('[POST /payments/subscribe] Could not cancel previous Stripe subscription:', cancelErr.message);
+      }
+    }
+
+    // 6. Create Stripe subscription
     const stripeSubscription = await stripe.subscriptions.create({
       customer: stripeCustomerId,
       items: [{ price: plan.stripe_price_id }],
       trial_period_days: trialDays,
     });
 
-    const trialEndsAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
+    const trialEndsAt = new Date(stripeSubscription.trial_end * 1000).toISOString();
 
-    // 6. Upsert subscriptions row
+    // 7. Upsert subscriptions row
     const upsertData = {
       user_id: req.user.id,
       stripe_customer_id: stripeCustomerId,
@@ -138,7 +148,7 @@ router.post('/subscribe', authenticate, checkRole('client', 'admin', 'superadmin
 
     if (upsertError) {
       console.error('[POST /payments/subscribe] Supabase upsert error:', upsertError);
-      return res.status(500).json({ message: 'Error al guardar la suscripción.' });
+      return res.status(500).json({ success: false, error: 'Error al guardar la suscripción.' });
     }
 
     return res.status(201).json({
@@ -151,7 +161,7 @@ router.post('/subscribe', authenticate, checkRole('client', 'admin', 'superadmin
     });
   } catch (err) {
     console.error('[POST /payments/subscribe] Unexpected error:', err);
-    return res.status(500).json({ message: 'Error interno del servidor.' });
+    return res.status(500).json({ success: false, error: 'Error interno del servidor.' });
   }
 });
 
@@ -167,11 +177,11 @@ router.post('/cancel', authenticate, checkRole('client', 'admin', 'superadmin'),
       .single();
 
     if (subError || !subscription) {
-      return res.status(404).json({ message: 'Suscripción no encontrada.' });
+      return res.status(404).json({ success: false, error: 'Suscripción no encontrada.' });
     }
 
     if (!subscription.stripe_sub_id) {
-      return res.status(422).json({ message: 'La suscripción no tiene un ID de Stripe asociado.' });
+      return res.status(422).json({ success: false, error: 'La suscripción no tiene un ID de Stripe asociado.' });
     }
 
     // Cancel at period end — access continues until current_period_end
@@ -188,7 +198,7 @@ router.post('/cancel', authenticate, checkRole('client', 'admin', 'superadmin'),
 
     if (updateError) {
       console.error('[POST /payments/cancel] Supabase update error:', updateError);
-      return res.status(500).json({ message: 'Error al actualizar la suscripción.' });
+      return res.status(500).json({ success: false, error: 'Error al actualizar la suscripción.' });
     }
 
     return res.status(200).json({
@@ -197,7 +207,7 @@ router.post('/cancel', authenticate, checkRole('client', 'admin', 'superadmin'),
     });
   } catch (err) {
     console.error('[POST /payments/cancel] Unexpected error:', err);
-    return res.status(500).json({ message: 'Error interno del servidor.' });
+    return res.status(500).json({ success: false, error: 'Error interno del servidor.' });
   }
 });
 
@@ -213,7 +223,7 @@ router.get('/status', authenticate, checkRole('client', 'admin', 'superadmin'), 
       .single();
 
     if (error || !subscription) {
-      return res.status(404).json({ message: 'Suscripción no encontrada.' });
+      return res.status(404).json({ success: false, error: 'Suscripción no encontrada.' });
     }
 
     return res.status(200).json({
@@ -228,7 +238,7 @@ router.get('/status', authenticate, checkRole('client', 'admin', 'superadmin'), 
     });
   } catch (err) {
     console.error('[GET /payments/status] Unexpected error:', err);
-    return res.status(500).json({ message: 'Error interno del servidor.' });
+    return res.status(500).json({ success: false, error: 'Error interno del servidor.' });
   }
 });
 

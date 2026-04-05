@@ -402,8 +402,6 @@ router.get('/me', authenticate, async (req, res) => {
       .from('subscriptions')
       .select('status, trial_ends_at, current_period_end')
       .eq('user_id', req.user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
       .maybeSingle();
 
     if (subError) {

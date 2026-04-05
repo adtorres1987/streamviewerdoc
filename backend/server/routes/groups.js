@@ -235,7 +235,7 @@ router.get('/:id', authenticate, async (req, res) => {
 
     const { data: members, error: membersError } = await supabase
       .from('group_members')
-      .select('role, joined_at, users(id, full_name, email)')
+      .select('role, joined_at, users!group_members_user_id_fkey(id, full_name, email)')
       .eq('group_id', id);
 
     if (membersError) {
