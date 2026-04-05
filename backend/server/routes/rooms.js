@@ -44,7 +44,7 @@ router.get('/', authenticate, async (req, res) => {
 
     const { data: rooms, error } = await supabase
       .from('rooms')
-      .select('id, name, code, status, file_name, last_page, last_offset, created_at, closed_at, host_id')
+      .select('id, group_id, name, code, status, file_name, last_page, last_offset, created_at, closed_at, host_id')
       .eq('group_id', groupId)
       .order('created_at', { ascending: false });
 

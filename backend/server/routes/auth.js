@@ -379,6 +379,84 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
+// POST /auth/complete-registration
+// ---------------------------------------------------------------------------
+router.post(
+  '/complete-registration',
+  [
+    body('email').isEmail().withMessage('Email inválido.').normalizeEmail(),
+    body('code')
+      .isLength({ min: 6, max: 6 })
+      .isNumeric()
+      .withMessage('El código debe ser de 6 dígitos numéricos.'),
+    body('full_name').trim().notEmpty().withMessage('El nombre completo es requerido.'),
+    body('password')
+      .isLength({ min: 8 })
+      .withMessage('La contraseña debe tener al menos 8 caracteres.'),
+  ],
+  async (req, res) => {
+    const errRes = validationErrors(req, res);
+    if (errRes) return;
+
+    const { email, code, full_name, password } = req.body;
+
+    try {
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('id, status, activation_code, role')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (error) {
+        console.error('[complete-registration] DB error:', error);
+        return res.status(500).json({ success: false, error: 'Error interno del servidor.' });
+      }
+
+      if (!user) {
+        return res.status(404).json({ success: false, error: 'Usuario no encontrado.' });
+      }
+
+      if (user.status !== 'pending') {
+        return res.status(409).json({ success: false, error: 'La cuenta ya fue activada.' });
+      }
+
+      const { valid, expired } = validateActivationCode(user.activation_code, code);
+
+      if (expired) {
+        return res.status(400).json({ success: false, error: 'El código ha expirado.' });
+      }
+
+      if (!valid) {
+        return res.status(400).json({ success: false, error: 'Código inválido.' });
+      }
+
+      const password_hash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({
+          password_hash,
+          full_name,
+          status: 'active',
+          activated_at: new Date().toISOString(),
+          activation_code: null,
+        })
+        .eq('id', user.id);
+
+      if (updateError) {
+        console.error('[complete-registration] DB update error:', updateError);
+        return res.status(500).json({ success: false, error: 'Error al activar la cuenta.' });
+      }
+
+      return res.json({ success: true, message: 'Cuenta activada exitosamente.' });
+    } catch (err) {
+      console.error('[complete-registration] Unexpected error:', err);
+      return res.status(500).json({ success: false, error: 'Error interno del servidor.' });
+    }
+  }
+);
+
+// ---------------------------------------------------------------------------
 // GET /auth/me  (requires JWT)
 // ---------------------------------------------------------------------------
 router.get('/me', authenticate, async (req, res) => {

@@ -5,3 +5,9 @@
 skills-lock.json
 /backend/server/node_modules/backend/server/.env
 /backend/server/.env
+
+/web-admin/node_modules
+/web-admin/.env
+/web-admin/.next
+/app-mobile/syncpdf/ios/Runner/GoogleService-Info.plist
+/app-mobile/syncpdf/android/app/google-services.json
