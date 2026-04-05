@@ -11,10 +11,16 @@ import '../screens/client/home_screen.dart';
 import '../screens/client/paywall_screen.dart';
 import '../screens/client/pdf_viewer_screen.dart';
 import '../screens/client/subscription_screen.dart';
+import '../screens/admin/admin_dashboard_screen.dart';
+import '../screens/admin/client_detail_screen.dart';
+import '../screens/admin/clients_screen.dart';
 import '../screens/forgot_password/forgot_password_screen.dart';
 import '../screens/invite/invite_accept_screen.dart';
 import '../screens/login/login_screen.dart';
 import '../screens/register/register_screen.dart';
+import '../screens/superadmin/admins_screen.dart';
+import '../screens/superadmin/settings_screen.dart';
+import '../screens/superadmin/superadmin_dashboard_screen.dart';
 
 part 'router.g.dart';
 
@@ -34,12 +40,22 @@ class AppRoutes {
   // Public — invite (deep-link: syncpdf://invite?token=xxxxx)
   static const invite = '/invite';
 
-  // Protected — main app
+  // Protected — main app (client)
   static const home = '/home';
   static const group = '/groups/:id';
   static const room = '/room/:id';
   static const subscription = '/subscription';
   static const paywall = '/paywall';
+
+  // Protected — admin panel
+  static const admin = '/admin';
+  static const adminClients = '/admin/clients';
+  static const adminClientDetail = '/admin/clients/:id';
+
+  // Protected — superadmin panel
+  static const superadmin = '/superadmin';
+  static const superadminAdmins = '/superadmin/admins';
+  static const superadminSettings = '/superadmin/settings';
 }
 
 // Routes that require an active subscription for client users.
@@ -89,13 +105,29 @@ GoRouter router(Ref ref) {
         return AppRoutes.login;
       }
 
-      // Subscription guard — client users without active subscription cannot
-      // access home, groups, or rooms; redirect them to the paywall.
       if (isAuthenticated) {
         final user = switch (authState) {
           AuthAuthenticated(:final user) => user,
           _ => null,
         };
+
+        // Role guards — enforce access boundaries between roles.
+        // clients must not reach admin or superadmin areas.
+        if (user?.role == 'client') {
+          if (location.startsWith('/admin') ||
+              location.startsWith('/superadmin')) {
+            return AppRoutes.home;
+          }
+        }
+        // admins must not reach superadmin-only areas.
+        if (user?.role == 'admin') {
+          if (location.startsWith('/superadmin')) {
+            return AppRoutes.admin;
+          }
+        }
+
+        // Subscription guard — client users without active subscription cannot
+        // access home, groups, or rooms; redirect them to the paywall.
         if (user?.role == 'client' &&
             !isActive &&
             _subscriptionProtectedPaths
@@ -181,6 +213,41 @@ GoRouter router(Ref ref) {
       GoRoute(
         path: AppRoutes.subscription,
         builder: (context, state) => const SubscriptionScreen(),
+      ),
+
+      // -----------------------------------------------------------------------
+      // Protected — admin panel (role: admin | superadmin)
+      // -----------------------------------------------------------------------
+      GoRoute(
+        path: AppRoutes.admin,
+        builder: (context, state) => const AdminDashboardScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminClients,
+        builder: (context, state) => const ClientsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminClientDetail,
+        builder: (context, state) {
+          final id = state.pathParameters['id']!;
+          return ClientDetailScreen(clientId: id);
+        },
+      ),
+
+      // -----------------------------------------------------------------------
+      // Protected — superadmin panel (role: superadmin only)
+      // -----------------------------------------------------------------------
+      GoRoute(
+        path: AppRoutes.superadmin,
+        builder: (context, state) => const SuperAdminDashboardScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.superadminAdmins,
+        builder: (context, state) => const AdminsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.superadminSettings,
+        builder: (context, state) => const SettingsScreen(),
       ),
     ],
   );

@@ -1,0 +1,6 @@
+.claude
+.agents
+.mcp.json
+*.md
+skills-lock.json
+/backend/server/node_modules
