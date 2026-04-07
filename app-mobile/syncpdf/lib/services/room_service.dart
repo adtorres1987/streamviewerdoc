@@ -57,6 +57,11 @@ class RoomService {
     return Room.fromJson(data as Map<String, dynamic>);
   }
 
+  /// DELETE /rooms/:id — deletes the room (group owner only).
+  Future<void> deleteRoom(String id) async {
+    await _delete('/rooms/$id');
+  }
+
   // --------------------------------------------------------------------------
   // Private helpers
   // --------------------------------------------------------------------------
@@ -89,6 +94,17 @@ class RoomService {
         options: options,
       );
       return (response.data ?? {})['data'];
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    } catch (e) {
+      throw UnknownException(e.toString());
+    }
+  }
+
+  Future<void> _delete(String path) async {
+    try {
+      final options = await _authOptions();
+      await _dio.delete<void>(path, options: options);
     } on DioException catch (e) {
       throw _mapDioError(e);
     } catch (e) {

@@ -44,4 +44,10 @@ class RoomActions extends _$RoomActions {
     ref.invalidate(roomProvider(roomId));
     ref.invalidate(roomsProvider(groupId));
   }
+
+  /// Deletes [roomId] (group owner only) and refreshes the rooms list.
+  Future<void> deleteRoom(String roomId, {required String groupId}) async {
+    await RoomService().deleteRoom(roomId);
+    ref.invalidate(roomsProvider(groupId));
+  }
 }

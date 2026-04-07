@@ -207,6 +207,44 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// DELETE /rooms/:id — delete a room (caller must be the group owner)
+// ---------------------------------------------------------------------------
+router.delete('/:id', authenticate, async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+
+  try {
+    const { data: room, error: roomError } = await supabase
+      .from('rooms')
+      .select('id, group_id')
+      .eq('id', id)
+      .single();
+
+    if (roomError || !room) {
+      return res.status(404).json({ message: 'Sala no encontrada.' });
+    }
+
+    // Only the group owner may delete rooms
+    const membership = await getGroupMembership(room.group_id, userId);
+    if (!membership || membership.role !== 'owner') {
+      return res.status(403).json({ message: 'Solo el propietario del grupo puede eliminar salas.' });
+    }
+
+    const { error: deleteError } = await supabase.from('rooms').delete().eq('id', id);
+
+    if (deleteError) {
+      console.error('[DELETE /rooms/:id] Delete error:', deleteError);
+      return res.status(500).json({ message: 'Error al eliminar la sala.' });
+    }
+
+    return res.json({ success: true, data: { deleted: true } });
+  } catch (err) {
+    console.error('[DELETE /rooms/:id] Unexpected error:', err);
+    return res.status(500).json({ message: 'Error interno del servidor.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // PATCH /rooms/:id/close — close a room (caller must be the host)
 // ---------------------------------------------------------------------------
 router.patch('/:id/close', authenticate, async (req, res) => {

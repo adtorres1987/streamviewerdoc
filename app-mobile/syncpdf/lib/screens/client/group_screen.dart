@@ -19,6 +19,7 @@ class GroupScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final groupAsync = ref.watch(groupProvider(groupId));
     final roomsAsync = ref.watch(roomsProvider(groupId));
+    final currentUser = ref.watch(currentUserProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -45,6 +46,8 @@ class GroupScreen extends ConsumerWidget {
           // Sort newest first.
           final sorted = [...rooms]
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          final isOwner =
+              groupAsync.valueOrNull?.ownerId == currentUser?.id;
           return sorted.isEmpty
               ? _EmptyRooms(
                   onCreate: () => _showCreateRoomDialog(context, ref))
@@ -55,8 +58,25 @@ class GroupScreen extends ConsumerWidget {
                         vertical: 8, horizontal: 16),
                     itemCount: sorted.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 4),
-                    itemBuilder: (context, index) =>
-                        _RoomTile(room: sorted[index]),
+                    itemBuilder: (context, index) {
+                      final room = sorted[index];
+                      final isHost = room.hostId == currentUser?.id;
+                      final canEnter = room.status == 'waiting' ||
+                          room.status == 'active' ||
+                          (room.status == 'host_disconnected' && isHost);
+                      final role = isHost ? 'host' : 'viewer';
+                      return _RoomTile(
+                        room: room,
+                        isOwner: isOwner,
+                        currentUserId: currentUser?.id,
+                        onEnter: canEnter
+                            ? () => context.push(
+                                '/room/${room.id}?role=$role')
+                            : null,
+                        onDeleteRequested: () =>
+                            _confirmDeleteRoom(context, ref, room),
+                      );
+                    },
                   ),
                 );
         },
@@ -132,6 +152,42 @@ class GroupScreen extends ConsumerWidget {
     controller.dispose();
   }
 
+  Future<void> _confirmDeleteRoom(
+      BuildContext context, WidgetRef ref, Room room) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Eliminar sala'),
+        content: Text(
+            '¿Seguro que quieres eliminar "${room.name}"? Esta acción no se puede deshacer.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      try {
+        await ref
+            .read(roomActionsProvider.notifier)
+            .deleteRoom(room.id, groupId: groupId);
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString())),
+          );
+        }
+      }
+    }
+  }
+
   Future<void> _showInviteDialog(BuildContext context, WidgetRef ref) async {
     final controller = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -195,41 +251,77 @@ class GroupScreen extends ConsumerWidget {
 // Room list tile
 // ---------------------------------------------------------------------------
 
-class _RoomTile extends ConsumerWidget {
-  const _RoomTile({required this.room});
+class _RoomTile extends StatelessWidget {
+  const _RoomTile({
+    required this.room,
+    required this.isOwner,
+    required this.currentUserId,
+    required this.onEnter,
+    required this.onDeleteRequested,
+  });
   final Room room;
+  final bool isOwner;
+  final String? currentUserId;
+  final VoidCallback? onEnter;
+  final VoidCallback onDeleteRequested;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final canEnter = room.status == 'waiting' || room.status == 'active';
+  Widget build(BuildContext context) {
+    final isHost = room.hostId == currentUserId;
+    final canEnter = room.status == 'waiting' ||
+        room.status == 'active' ||
+        (room.status == 'host_disconnected' && isHost);
+    final statusColor = _statusColor(room.status);
     return Card(
       child: ListTile(
         leading: CircleAvatar(
-          backgroundColor: _statusColor(room.status).withOpacity(0.15),
-          child: Icon(Icons.picture_as_pdf, color: _statusColor(room.status)),
+          backgroundColor: statusColor.withAlpha(38),
+          child: Icon(Icons.picture_as_pdf, color: statusColor),
         ),
         title: Text(room.name),
         subtitle: Row(
           children: [
             _StatusBadge(status: room.status),
             const SizedBox(width: 8),
-            Text(
-              'Código: ${room.code}',
-              style: const TextStyle(fontSize: 12),
-            ),
+            Text('Código: ${room.code}',
+                style: const TextStyle(fontSize: 12)),
           ],
         ),
-        trailing: canEnter ? const Icon(Icons.chevron_right) : null,
-        onTap: canEnter
-            ? () {
-                // Determine role client-side from hostId.
-                // The server enforces the real role — this sets the initial UI mode.
-                final currentUser = ref.read(currentUserProvider);
-                final role =
-                    room.hostId == currentUser?.id ? 'host' : 'viewer';
-                context.push('/room/${room.id}?role=$role');
-              }
-            : null,
+        trailing: isOwner
+            ? PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) {
+                  if (value == 'enter') {
+                    onEnter?.call();
+                  } else if (value == 'delete') {
+                    onDeleteRequested();
+                  }
+                },
+                itemBuilder: (_) => [
+                  if (canEnter)
+                    const PopupMenuItem(
+                      value: 'enter',
+                      child: Row(children: [
+                        Icon(Icons.play_arrow_outlined),
+                        SizedBox(width: 8),
+                        Text('Entrar a la sala'),
+                      ]),
+                    ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(children: [
+                      Icon(Icons.delete_outline, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Eliminar sala',
+                          style: TextStyle(color: Colors.red)),
+                    ]),
+                  ),
+                ],
+              )
+            : canEnter
+                ? const Icon(Icons.chevron_right)
+                : null,
+        onTap: (!isOwner && canEnter) ? onEnter : null,
       ),
     );
   }

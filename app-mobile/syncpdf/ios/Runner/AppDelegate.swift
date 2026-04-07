@@ -1,11 +1,9 @@
-import Firebase
 import Flutter
 import UIKit
 
-// AppDelegate configures Firebase and delegates engine registration to Flutter.
-// Firebase.configure() must be called before any other Firebase API.
-// Requires GoogleService-Info.plist to be present in the Runner target —
-// obtain this file from Firebase Console → Project settings → iOS app.
+// Firebase is intentionally disabled until GoogleService-Info.plist is added.
+// To enable: add GoogleService-Info.plist from Firebase Console, then
+// uncomment `import Firebase` and `FirebaseApp.configure()`.
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -13,7 +11,6 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-    FirebaseApp.configure()
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 

@@ -16,6 +16,7 @@ import '../screens/admin/client_detail_screen.dart';
 import '../screens/admin/clients_screen.dart';
 import '../screens/forgot_password/forgot_password_screen.dart';
 import '../screens/invite/invite_accept_screen.dart';
+import '../screens/invite/pending_invitations_screen.dart';
 import '../screens/login/login_screen.dart';
 import '../screens/register/register_screen.dart';
 import '../screens/superadmin/admins_screen.dart';
@@ -40,6 +41,9 @@ class AppRoutes {
   // Public — invite (deep-link: syncpdf://invite?token=xxxxx)
   static const invite = '/invite';
 
+  // Protected — invitations
+  static const invitations = '/invitations';
+
   // Protected — main app (client)
   static const home = '/home';
   static const group = '/groups/:id';
@@ -62,18 +66,47 @@ class AppRoutes {
 const _subscriptionProtectedPaths = ['/home', '/groups', '/room'];
 
 // ---------------------------------------------------------------------------
+// Refresh notifier — bridges Riverpod state changes to GoRouter's
+// refreshListenable so the GoRouter instance is created only ONCE and the
+// redirect re-evaluates without recreating the entire router (which would
+// tear down all mounted widgets and cause _dependents.isEmpty assertions).
+// ---------------------------------------------------------------------------
+
+class _GoRouterRefreshNotifier extends ChangeNotifier {
+  void refresh() => notifyListeners();
+}
+
+// ---------------------------------------------------------------------------
 // Router provider
 // ---------------------------------------------------------------------------
 
-@riverpod
+@Riverpod(keepAlive: true)
 GoRouter router(Ref ref) {
-  // The router re-evaluates the redirect whenever auth state changes.
-  final authState = ref.watch(authNotifierProvider);
-  // Also watch subscription so the guard reacts when it loads.
-  final isActive = ref.watch(isSubscriptionActiveProvider);
+  // Read initial values — do NOT watch (watching would rebuild this provider
+  // on every change, recreating GoRouter and destroying the widget tree).
+  var authState = ref.read(authNotifierProvider);
+  var isActive = ref.read(isSubscriptionActiveProvider);
+
+  // Notifier used to tell GoRouter to re-evaluate the redirect function
+  // without recreating the router itself.
+  final notifier = _GoRouterRefreshNotifier();
+
+  // Listen for changes and update local vars, then trigger a redirect check.
+  ref.listen<AuthState>(authNotifierProvider, (_, next) {
+    authState = next;
+    notifier.refresh();
+  });
+
+  ref.listen<bool>(isSubscriptionActiveProvider, (_, next) {
+    isActive = next;
+    notifier.refresh();
+  });
+
+  ref.onDispose(notifier.dispose);
 
   return GoRouter(
     initialLocation: AppRoutes.login,
+    refreshListenable: notifier,
     redirect: (BuildContext context, GoRouterState state) {
       // While auth state is still being resolved (initial / loading), hold.
       final isLoading = switch (authState) {
@@ -213,6 +246,10 @@ GoRouter router(Ref ref) {
       GoRoute(
         path: AppRoutes.subscription,
         builder: (context, state) => const SubscriptionScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.invitations,
+        builder: (context, state) => const PendingInvitationsScreen(),
       ),
 
       // -----------------------------------------------------------------------

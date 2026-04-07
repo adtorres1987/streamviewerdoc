@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/router.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/group_provider.dart';
 import '../../widgets/subscription_badge.dart';
@@ -18,6 +19,11 @@ class HomeScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('SyncPDF'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.mail_outline),
+            tooltip: 'Invitaciones pendientes',
+            onPressed: () => context.push(AppRoutes.invitations),
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 8),
             child: Center(child: SubscriptionBadge()),

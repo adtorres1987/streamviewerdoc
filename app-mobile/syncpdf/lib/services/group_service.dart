@@ -5,6 +5,38 @@ import '../core/constants.dart';
 import '../core/exceptions.dart';
 import '../models/group.dart';
 
+/// Represents a pending group invitation for the authenticated user.
+class PendingInvitation {
+  const PendingInvitation({
+    required this.id,
+    required this.token,
+    required this.groupId,
+    required this.groupName,
+    required this.invitedByEmail,
+    required this.expiresAt,
+  });
+
+  final String id;
+  final String token;
+  final String groupId;
+  final String groupName;
+  final String invitedByEmail;
+  final DateTime expiresAt;
+
+  factory PendingInvitation.fromJson(Map<String, dynamic> json) {
+    return PendingInvitation(
+      id: json['id'] as String? ?? '',
+      token: json['token'] as String? ?? '',
+      groupId: json['group_id'] as String? ?? '',
+      groupName: json['group_name'] as String? ?? '',
+      invitedByEmail: json['invited_by_email'] as String? ?? '',
+      expiresAt: json['expires_at'] != null
+          ? DateTime.parse(json['expires_at'] as String)
+          : DateTime.now().add(const Duration(hours: 48)),
+    );
+  }
+}
+
 /// Handles all HTTP calls to `/groups/*` endpoints.
 /// Throws typed [AppException] subclasses — never raw [DioException].
 class GroupService {
@@ -76,6 +108,16 @@ class GroupService {
   /// POST /groups/invite/:token/accept — authenticated user accepts invite.
   Future<void> acceptInvite(String token) async {
     await _post('/groups/invite/$token/accept', {});
+  }
+
+  /// GET /groups/invitations/pending — returns pending invitations for the authed user.
+  Future<List<PendingInvitation>> getPendingInvitations() async {
+    final data = await _get('/groups/invitations/pending');
+    final map = data as Map<String, dynamic>;
+    final list = map['invitations'] as List<dynamic>;
+    return list
+        .map((e) => PendingInvitation.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   // --------------------------------------------------------------------------

@@ -171,5 +171,23 @@ final groupsProvider =
 );
 
 typedef _$Groups = AutoDisposeAsyncNotifier<List<Group>>;
+String _$pendingInvitationsHash() =>
+    r'992d84179dfb19048e0200d1ca422a3d746dadbb';
+
+/// See also [PendingInvitations].
+@ProviderFor(PendingInvitations)
+final pendingInvitationsProvider = AutoDisposeAsyncNotifierProvider<
+    PendingInvitations, List<PendingInvitation>>.internal(
+  PendingInvitations.new,
+  name: r'pendingInvitationsProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$pendingInvitationsHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+typedef _$PendingInvitations
+    = AutoDisposeAsyncNotifier<List<PendingInvitation>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

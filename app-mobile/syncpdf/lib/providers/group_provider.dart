@@ -35,3 +35,28 @@ class Groups extends _$Groups {
 
 @riverpod
 Future<Group> group(Ref ref, String id) => GroupService().getGroup(id);
+
+// ---------------------------------------------------------------------------
+// Pending invitations provider
+// ---------------------------------------------------------------------------
+
+@riverpod
+class PendingInvitations extends _$PendingInvitations {
+  @override
+  Future<List<PendingInvitation>> build() =>
+      GroupService().getPendingInvitations();
+
+  /// Accepts an invitation and refreshes groups + this list.
+  Future<void> accept(String token) async {
+    await GroupService().acceptInvite(token);
+    ref.invalidate(groupsProvider);
+    ref.invalidateSelf();
+  }
+
+  /// Declines an invitation optimistically (no backend call).
+  void decline(String id) {
+    final current = state.valueOrNull;
+    if (current == null) return;
+    state = AsyncData(current.where((inv) => inv.id != id).toList());
+  }
+}

@@ -126,6 +126,7 @@ async function persistHostDisconnect(roomId, page, offsetY) {
   const { error } = await supabase
     .from('rooms')
     .update({
+      status: 'host_disconnected',
       host_disconnected_at: new Date().toISOString(),
       last_page: page,
       last_offset: offsetY,
@@ -134,6 +135,17 @@ async function persistHostDisconnect(roomId, page, offsetY) {
 
   if (error) {
     console.error(`[room_manager] persistHostDisconnect error (room=${roomId}):`, error);
+  }
+}
+
+async function persistRoomActive(roomId) {
+  const { error } = await supabase
+    .from('rooms')
+    .update({ status: 'active' })
+    .eq('id', roomId);
+
+  if (error) {
+    console.error(`[room_manager] persistRoomActive error (room=${roomId}):`, error);
   }
 }
 
@@ -295,6 +307,9 @@ function initRoom(roomId, hostId, hostName, hostSocket) {
   });
 
   broadcastParticipantCount(roomId);
+
+  // Persist status change to DB (fire and forget)
+  persistRoomActive(roomId);
 }
 
 /**

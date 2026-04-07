@@ -87,6 +87,45 @@ router.post('/', authenticate, checkSubscription, async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /groups/invitations/pending — list pending invitations for the authed user
+// Must be placed BEFORE /invite/:token and /:id to avoid route shadowing
+// ---------------------------------------------------------------------------
+router.get('/invitations/pending', authenticate, async (req, res) => {
+  const userEmail = req.user.email;
+
+  try {
+    const { data, error } = await supabase
+      .from('group_invitations')
+      .select(
+        'id, token, group_id, invited_by, expires_at, groups(name), users!group_invitations_invited_by_fkey(email)'
+      )
+      .eq('invited_email', userEmail)
+      .eq('status', 'pending')
+      .gt('expires_at', new Date().toISOString())
+      .order('expires_at', { ascending: true });
+
+    if (error) {
+      console.error('[GET /groups/invitations/pending] Supabase error:', error);
+      return res.status(500).json({ message: 'Error al obtener las invitaciones.' });
+    }
+
+    const invitations = (data || []).map((row) => ({
+      id: row.id,
+      token: row.token,
+      group_id: row.group_id,
+      group_name: row.groups?.name ?? null,
+      invited_by_email: row.users?.email ?? null,
+      expires_at: row.expires_at,
+    }));
+
+    return res.json({ success: true, data: { invitations } });
+  } catch (err) {
+    console.error('[GET /groups/invitations/pending] Unexpected error:', err);
+    return res.status(500).json({ message: 'Error interno del servidor.' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /groups/invite/:token — validate an invitation token (public)
 // Must be placed BEFORE /groups/:id to avoid route shadowing
 // ---------------------------------------------------------------------------
