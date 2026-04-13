@@ -11,6 +11,7 @@ const {
   handleRejoinSync,
   handleDisconnect,
   getRoomContext,
+  getRoomPdfInfo,
   _isRoomHost,
 } = require('./room_manager');
 
@@ -126,26 +127,37 @@ async function handleJoinRoom(ws, payload) {
       }
     }
 
-    // Check if this is a rejoin (room exists in memory and user was already there)
-    const context = getRoomContext(roomId, ws.userId);
-    const isRejoin = context !== null;
-
-    const joined = joinRoom(roomId, ws.userId, ws.userName, ws, role);
-
-    if (!joined) {
-      if (role === 'host') {
-        // Host joins before any CREATE_ROOM (or after server restart).
-        // Auto-initialize the room so viewers can join immediately.
-        initRoom(roomId, ws.userId, ws.userName, ws);
-        sendWs(ws, { type: 'ROOM_JOINED', roomId, code: room.code });
-      } else {
-        // Viewer arrived before the host — host must join first.
-        return sendError(ws, 'ROOM_NOT_ACTIVE', 'La sala no está activa en este momento.');
-      }
-    } else if (isRejoin && role === 'viewer') {
-      sendWs(ws, { type: 'REJOIN_CONTEXT', ...context });
-    } else {
+    if (role === 'host') {
+      // For the host, always use initRoom regardless of whether the room is
+      // already in memory.  initRoom handles both:
+      //   - Fresh init (room not in memory): creates room, broadcasts participant count
+      //   - Reconnect (room in host_disconnected state): clears close timer,
+      //     broadcasts HOST_RECONNECTED to viewers, persists active status
+      // This ensures the close timer is ALWAYS cancelled on host reconnect.
+      initRoom(roomId, ws.userId, ws.userName, ws);
       sendWs(ws, { type: 'ROOM_JOINED', roomId, code: room.code });
+    } else {
+      // Viewer join
+      const context = getRoomContext(roomId, ws.userId);
+      const isRejoin = context !== null;
+
+      const joined = joinRoom(roomId, ws.userId, ws.userName, ws, 'viewer');
+
+      if (!joined) {
+        // Room not in memory — host hasn't connected yet.
+        return sendError(ws, 'ROOM_NOT_ACTIVE', 'La sala no está activa en este momento.');
+      } else if (isRejoin) {
+        sendWs(ws, { type: 'REJOIN_CONTEXT', ...context });
+      } else {
+        sendWs(ws, { type: 'ROOM_JOINED', roomId, code: room.code });
+      }
+
+      // If the room already has a PDF (host uploaded before this viewer joined),
+      // send PDF_READY immediately so the viewer doesn't wait forever.
+      const pdfInfo = getRoomPdfInfo(roomId);
+      if (pdfInfo) {
+        sendWs(ws, { type: 'PDF_READY', pdfUrl: pdfInfo.pdfUrl, fileName: pdfInfo.fileName });
+      }
     }
   } catch (err) {
     console.error('[ws] handleJoinRoom error:', err);

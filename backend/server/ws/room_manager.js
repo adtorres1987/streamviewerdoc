@@ -280,13 +280,8 @@ function initRoom(roomId, hostId, hostName, hostSocket) {
 
     broadcastParticipantCount(roomId);
 
-    // Confirm room joined to host
-    send(hostSocket, {
-      type: 'ROOM_JOINED',
-      roomId,
-      code: null, // host already has the code
-    });
-
+    // ROOM_JOINED is sent by the caller (handleJoinRoom / handleCreateRoom)
+    // so it can include the real room code from the DB.
     return;
   }
 
@@ -308,6 +303,8 @@ function initRoom(roomId, hostId, hostName, hostSocket) {
     status: 'active',
     lastPage: 1,
     lastOffset: 0,
+    pdfUrl: null,
+    fileName: null,
     hostDisconnectedAt: null,
     closeTimer: null,
     participants,
@@ -553,9 +550,22 @@ function _isRoomHost(roomId, userId) {
 function broadcastPdfReady(roomId, pdfUrl, fileName) {
   const room = rooms.get(roomId);
   if (!room) return;
+  // Cache so late-joining viewers can receive it on JOIN_ROOM
+  room.pdfUrl = pdfUrl;
+  room.fileName = fileName;
   for (const [, participant] of room.participants) {
     send(participant.socket, { type: 'PDF_READY', pdfUrl, fileName });
   }
+}
+
+/**
+ * getRoomPdfInfo — returns { pdfUrl, fileName } if a PDF has been uploaded
+ * for this room, or null if not yet available.
+ */
+function getRoomPdfInfo(roomId) {
+  const room = rooms.get(roomId);
+  if (!room || !room.pdfUrl) return null;
+  return { pdfUrl: room.pdfUrl, fileName: room.fileName };
 }
 
 module.exports = {
@@ -569,4 +579,5 @@ module.exports = {
   getActiveRooms,
   _isRoomHost,
   broadcastPdfReady,
+  getRoomPdfInfo,
 };

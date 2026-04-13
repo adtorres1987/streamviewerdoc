@@ -63,7 +63,7 @@ class GroupScreen extends ConsumerWidget {
                       final isHost = room.hostId == currentUser?.id;
                       final canEnter = room.status == 'waiting' ||
                           room.status == 'active' ||
-                          (room.status == 'host_disconnected' && isHost);
+                          room.status == 'host_disconnected';
                       final role = isHost ? 'host' : 'viewer';
                       return _RoomTile(
                         room: room,
@@ -313,7 +313,7 @@ class _RoomTile extends StatelessWidget {
     final isHost = room.hostId == currentUserId;
     final canEnter = room.status == 'waiting' ||
         room.status == 'active' ||
-        (room.status == 'host_disconnected' && isHost);
+        room.status == 'host_disconnected';
     final canReopen = isHost && room.status == 'closed';
     final statusColor = _statusColor(room.status);
     return Card(

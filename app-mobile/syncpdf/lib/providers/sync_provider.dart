@@ -146,11 +146,11 @@ class SyncNotifier extends _$SyncNotifier {
     _syncService.joinRoom(roomId);
   }
 
-  /// Tears down the WebSocket connection and resets state.
+  /// Tears down the WebSocket connection.
+  /// State resets automatically via auto-dispose when the last watcher leaves.
   void disconnect() {
     _eventSub?.cancel();
     _syncService.disconnect();
-    state = SyncState.initial();
     _currentRoomId = null;
     _currentRole = null;
   }
@@ -259,11 +259,14 @@ class SyncNotifier extends _$SyncNotifier {
         break;
 
       case ErrorEvent(:final code, :final message):
-        // 4001-equivalent: the server rejects this client.
-        // Emit an error but let the existing reconnect logic handle recovery.
-        // If the code signals an auth failure the router guard will redirect.
-        // ignore: avoid_print
-        print('[SyncService] WS error $code: $message');
+        if (code == 'ROOM_CLOSED') {
+          // Room was closed while the user was navigating in — treat as
+          // SESSION_CLOSED so the UI shows the session-ended banner/dialog.
+          state = state.copyWith(bannerState: BannerState.sessionClosed);
+        } else {
+          // ignore: avoid_print
+          print('[SyncService] WS error $code: $message');
+        }
 
       // Dart sealed-class exhaustiveness: no default needed if every
       // subclass is handled.

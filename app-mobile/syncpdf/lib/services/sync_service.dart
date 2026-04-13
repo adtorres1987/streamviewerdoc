@@ -17,6 +17,7 @@ import '../models/sync_event.dart';
 /// Lifecycle: create once per room session, call [disconnect] in dispose().
 class SyncService {
   WebSocketChannel? _channel;
+  StreamSubscription? _channelSub;
   String? _currentRoomId;
   String? _jwt;
 
@@ -59,16 +60,29 @@ class SyncService {
 
   /// Host-only — caller must apply 50 ms debounce before calling.
   void broadcastScroll(int page, double offsetY) {
-    _send({'type': 'SCROLL', 'page': page, 'offsetY': offsetY});
+    if (_currentRoomId == null) return;
+    _send({
+      'type': 'SCROLL',
+      'roomId': _currentRoomId,
+      'page': page,
+      'offsetY': offsetY,
+    });
   }
 
   /// Viewer free-scroll persistence — debounced internally to
   /// [AppConstants.viewerPersistDebounceMs] (5 000 ms).
   void sendViewerScroll(int page, double offsetY) {
+    if (_currentRoomId == null) return;
+    final roomId = _currentRoomId;
     _viewerScrollDebounce?.cancel();
     _viewerScrollDebounce = Timer(
       const Duration(milliseconds: AppConstants.viewerPersistDebounceMs),
-      () => _send({'type': 'VIEWER_SCROLL', 'page': page, 'offsetY': offsetY}),
+      () => _send({
+        'type': 'VIEWER_SCROLL',
+        'roomId': roomId,
+        'page': page,
+        'offsetY': offsetY,
+      }),
     );
   }
 
@@ -92,6 +106,8 @@ class SyncService {
     _stopHeartbeat();
     _reconnectTimer?.cancel();
     _viewerScrollDebounce?.cancel();
+    _channelSub?.cancel();
+    _channelSub = null;
     _channel?.sink.close();
     _eventController.close();
   }
@@ -101,14 +117,18 @@ class SyncService {
   // --------------------------------------------------------------------------
 
   void _doConnect() {
-    // Close any stale channel before opening a new one.
+    // Cancel the old subscription BEFORE closing the channel so that
+    // _onDisconnected does not fire for an intentional close and trigger
+    // a spurious reconnect cycle.
+    _channelSub?.cancel();
+    _channelSub = null;
     _channel?.sink.close();
     _channel = null;
 
     final uri = Uri.parse('${AppConstants.wsUrl}?token=$_jwt');
     _channel = WebSocketChannel.connect(uri);
 
-    _channel!.stream.listen(
+    _channelSub = _channel!.stream.listen(
       _onMessage,
       onDone: _onDisconnected,
       onError: (_) => _onDisconnected(),
@@ -127,12 +147,8 @@ class SyncService {
   void _onDisconnected() {
     _stopHeartbeat();
     _channel = null;
+    _channelSub = null;
 
-    // Server closed with 4001 = invalid JWT.  Emit an error event and do not
-    // attempt to reconnect because the token is bad.
-    // web_socket_channel surfaces the close code in the stream's Done event;
-    // we cannot reliably inspect it here, so we let the notifier handle
-    // ERROR events from the server before the close.
     if (!_disposed) {
       _scheduleReconnect();
     }

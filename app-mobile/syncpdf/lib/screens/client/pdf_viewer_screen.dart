@@ -188,6 +188,9 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
       case RoomClosedEvent():
         _showSessionClosedDialog();
 
+      case ErrorEvent(:final code):
+        if (code == 'ROOM_CLOSED') _showSessionClosedDialog();
+
       default:
         // All other events (HOST_DISCONNECTED, HOST_RECONNECTED, PARTICIPANTS)
         // are handled by SyncNotifier and reflected in SyncState — the banner
@@ -317,9 +320,8 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
   void dispose() {
     _syncSub?.cancel();
     _hostScrollDebounce?.cancel();
-    // SyncNotifier.disconnect() is called via ref.onDispose in the provider,
-    // but we also call it explicitly here for clarity and immediacy.
-    ref.read(syncNotifierProvider.notifier).disconnect();
+    // Cleanup is handled by ref.onDispose in SyncNotifier.build().
+    // Calling disconnect() here would set state on a defunct element → crash.
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

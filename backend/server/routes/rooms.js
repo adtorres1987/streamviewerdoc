@@ -430,10 +430,10 @@ router.post(
 
       const pdfUrl = signedData.signedUrl;
 
-      // Persist pdf_url on the room record
+      // Persist pdf_url and file_name on the room record
       const { error: updateError } = await supabase
         .from('rooms')
-        .update({ pdf_url: pdfUrl })
+        .update({ pdf_url: pdfUrl, file_name: originalname })
         .eq('id', roomId);
 
       if (updateError) {
