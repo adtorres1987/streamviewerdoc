@@ -13,11 +13,12 @@ sealed class SyncEvent {
     return switch (type) {
       'ROOM_JOINED' => RoomJoinedEvent.fromJson(json),
       'SYNC' => SyncScrollEvent.fromJson(json),
-      'PARTICIPANTS_UPDATE' => ParticipantsEvent.fromJson(json),
+      'PARTICIPANTS' => ParticipantsEvent.fromJson(json),
       'HOST_DISCONNECTED' => HostDisconnectedEvent.fromJson(json),
       'HOST_RECONNECTED' => HostReconnectedEvent.fromJson(json),
       'REJOIN_CONTEXT' => RejoinContextEvent.fromJson(json),
       'SESSION_CLOSED' => RoomClosedEvent.fromJson(json),
+      'PDF_READY' => PdfReadyEvent.fromJson(json),
       'ERROR' => ErrorEvent.fromJson(json),
       _ => ErrorEvent(code: 'UNKNOWN_TYPE', message: 'Unknown WS event type: $type'),
     };
@@ -148,6 +149,20 @@ class RoomClosedEvent extends SyncEvent {
 
   factory RoomClosedEvent.fromJson(Map<String, dynamic> json) =>
       RoomClosedEvent(reason: json['reason'] as String? ?? 'Session ended.');
+}
+
+/// Server broadcasts the PDF URL after the host uploads a file.
+/// Viewers receive this and download the file to temp storage.
+class PdfReadyEvent extends SyncEvent {
+  const PdfReadyEvent({required this.pdfUrl, required this.fileName});
+
+  final String pdfUrl;
+  final String fileName;
+
+  factory PdfReadyEvent.fromJson(Map<String, dynamic> json) => PdfReadyEvent(
+        pdfUrl: json['pdfUrl'] as String,
+        fileName: json['fileName'] as String,
+      );
 }
 
 /// Server-side error (e.g., not a member of the group).

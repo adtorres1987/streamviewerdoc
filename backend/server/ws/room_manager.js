@@ -234,7 +234,8 @@ function initRoom(roomId, hostId, hostName, hostSocket) {
   // If room already exists in memory (e.g. host reconnect), update socket
   if (rooms.has(roomId)) {
     const room = rooms.get(roomId);
-    // Treat as host reconnect
+    const wasHostDisconnected = room.status === 'host_disconnected';
+
     room.hostSocket = hostSocket;
     room.status = 'active';
     room.hostDisconnectedAt = null;
@@ -259,16 +260,22 @@ function initRoom(roomId, hostId, hostName, hostSocket) {
       });
     }
 
-    // Broadcast HOST_RECONNECTED to all viewers
-    for (const [uid, participant] of room.participants) {
-      if (uid !== hostId && participant.role === 'viewer') {
-        send(participant.socket, {
-          type: 'HOST_RECONNECTED',
-          page: room.lastPage,
-          offsetY: room.lastOffset,
-          hostName,
-        });
+    // Only broadcast HOST_RECONNECTED when the host was actually disconnected.
+    // Avoids false HOST_RECONNECTED when CREATE_ROOM fires after JOIN_ROOM
+    // already initialized the room.
+    if (wasHostDisconnected) {
+      for (const [uid, participant] of room.participants) {
+        if (uid !== hostId && participant.role === 'viewer') {
+          send(participant.socket, {
+            type: 'HOST_RECONNECTED',
+            page: room.lastPage,
+            offsetY: room.lastOffset,
+            hostName,
+          });
+        }
       }
+      // Persist active status back to DB
+      persistRoomActive(roomId);
     }
 
     broadcastParticipantCount(roomId);
@@ -539,6 +546,18 @@ function _isRoomHost(roomId, userId) {
   return room.hostId === userId;
 }
 
+/**
+ * broadcastPdfReady — sends PDF_READY to every connected participant in the room.
+ * Called from the REST route after a successful upload to Supabase Storage.
+ */
+function broadcastPdfReady(roomId, pdfUrl, fileName) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+  for (const [, participant] of room.participants) {
+    send(participant.socket, { type: 'PDF_READY', pdfUrl, fileName });
+  }
+}
+
 module.exports = {
   initRoom,
   joinRoom,
@@ -549,4 +568,5 @@ module.exports = {
   getRoomContext,
   getActiveRooms,
   _isRoomHost,
+  broadcastPdfReady,
 };

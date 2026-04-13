@@ -253,6 +253,11 @@ class SyncNotifier extends _$SyncNotifier {
         // directly to PDFViewerScreen.  State is unaffected.
         break;
 
+      case PdfReadyEvent():
+        // Forwarded via the raw event stream to PDFViewerScreen.
+        // State is unaffected here.
+        break;
+
       case ErrorEvent(:final code, :final message):
         // 4001-equivalent: the server rejects this client.
         // Emit an error but let the existing reconnect logic handle recovery.

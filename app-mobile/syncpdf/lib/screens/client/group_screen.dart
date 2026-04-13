@@ -73,6 +73,9 @@ class GroupScreen extends ConsumerWidget {
                             ? () => context.push(
                                 '/room/${room.id}?role=$role')
                             : null,
+                        onReopen: (isHost && room.status == 'closed')
+                            ? () => _confirmReopenRoom(context, ref, room)
+                            : null,
                         onDeleteRequested: () =>
                             _confirmDeleteRoom(context, ref, room),
                       );
@@ -150,6 +153,44 @@ class GroupScreen extends ConsumerWidget {
       }
     }
     controller.dispose();
+  }
+
+  Future<void> _confirmReopenRoom(
+      BuildContext context, WidgetRef ref, Room room) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reabrir sala'),
+        content: Text(
+            '¿Quieres volver a abrir "${room.name}"? La sala quedará en espera hasta que ingreses.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Reabrir'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      try {
+        await ref
+            .read(roomActionsProvider.notifier)
+            .reopenRoom(room.id, groupId: groupId);
+        if (context.mounted) {
+          context.push('/room/${room.id}?role=host');
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString())),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _confirmDeleteRoom(
@@ -257,12 +298,14 @@ class _RoomTile extends StatelessWidget {
     required this.isOwner,
     required this.currentUserId,
     required this.onEnter,
+    required this.onReopen,
     required this.onDeleteRequested,
   });
   final Room room;
   final bool isOwner;
   final String? currentUserId;
   final VoidCallback? onEnter;
+  final VoidCallback? onReopen;
   final VoidCallback onDeleteRequested;
 
   @override
@@ -271,6 +314,7 @@ class _RoomTile extends StatelessWidget {
     final canEnter = room.status == 'waiting' ||
         room.status == 'active' ||
         (room.status == 'host_disconnected' && isHost);
+    final canReopen = isHost && room.status == 'closed';
     final statusColor = _statusColor(room.status);
     return Card(
       child: ListTile(
@@ -283,8 +327,13 @@ class _RoomTile extends StatelessWidget {
           children: [
             _StatusBadge(status: room.status),
             const SizedBox(width: 8),
-            Text('Código: ${room.code}',
-                style: const TextStyle(fontSize: 12)),
+            Flexible(
+              child: Text(
+                'Código: ${room.code}',
+                style: const TextStyle(fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         trailing: isOwner
@@ -293,6 +342,8 @@ class _RoomTile extends StatelessWidget {
                 onSelected: (value) {
                   if (value == 'enter') {
                     onEnter?.call();
+                  } else if (value == 'reopen') {
+                    onReopen?.call();
                   } else if (value == 'delete') {
                     onDeleteRequested();
                   }
@@ -305,6 +356,15 @@ class _RoomTile extends StatelessWidget {
                         Icon(Icons.play_arrow_outlined),
                         SizedBox(width: 8),
                         Text('Entrar a la sala'),
+                      ]),
+                    ),
+                  if (canReopen)
+                    const PopupMenuItem(
+                      value: 'reopen',
+                      child: Row(children: [
+                        Icon(Icons.restart_alt_outlined),
+                        SizedBox(width: 8),
+                        Text('Reabrir sala'),
                       ]),
                     ),
                   const PopupMenuItem(
@@ -320,8 +380,16 @@ class _RoomTile extends StatelessWidget {
               )
             : canEnter
                 ? const Icon(Icons.chevron_right)
-                : null,
-        onTap: (!isOwner && canEnter) ? onEnter : null,
+                : canReopen
+                    ? const Icon(Icons.restart_alt_outlined)
+                    : null,
+        onTap: !isOwner
+            ? (canEnter
+                ? onEnter
+                : canReopen
+                    ? onReopen
+                    : null)
+            : null,
       ),
     );
   }

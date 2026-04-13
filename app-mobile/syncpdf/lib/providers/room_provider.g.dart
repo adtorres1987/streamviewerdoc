@@ -283,7 +283,7 @@ class _RoomProviderElement extends AutoDisposeFutureProviderElement<Room>
   String get id => (origin as RoomProvider).id;
 }
 
-String _$roomActionsHash() => r'6eba03b7c1a7479d5ebc7129e6788a5ced0390ae';
+String _$roomActionsHash() => r'22ca3b845f487fb79f1ca4a58f83388c6afe41a8';
 
 /// See also [RoomActions].
 @ProviderFor(RoomActions)

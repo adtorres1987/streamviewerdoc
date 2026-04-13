@@ -133,12 +133,16 @@ async function handleJoinRoom(ws, payload) {
     const joined = joinRoom(roomId, ws.userId, ws.userName, ws, role);
 
     if (!joined) {
-      // Room not in memory — this can happen if the server restarted
-      // or the host hasn't sent CREATE_ROOM yet
-      return sendError(ws, 'ROOM_NOT_ACTIVE', 'La sala no está activa en este momento.');
-    }
-
-    if (isRejoin && role === 'viewer') {
+      if (role === 'host') {
+        // Host joins before any CREATE_ROOM (or after server restart).
+        // Auto-initialize the room so viewers can join immediately.
+        initRoom(roomId, ws.userId, ws.userName, ws);
+        sendWs(ws, { type: 'ROOM_JOINED', roomId, code: room.code });
+      } else {
+        // Viewer arrived before the host — host must join first.
+        return sendError(ws, 'ROOM_NOT_ACTIVE', 'La sala no está activa en este momento.');
+      }
+    } else if (isRejoin && role === 'viewer') {
       sendWs(ws, { type: 'REJOIN_CONTEXT', ...context });
     } else {
       sendWs(ws, { type: 'ROOM_JOINED', roomId, code: room.code });

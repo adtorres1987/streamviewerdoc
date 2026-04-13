@@ -45,6 +45,14 @@ class RoomActions extends _$RoomActions {
     ref.invalidate(roomsProvider(groupId));
   }
 
+  /// Reopens a closed [roomId] (host only) and refreshes list + detail.
+  Future<Room> reopenRoom(String roomId, {required String groupId}) async {
+    final room = await RoomService().reopenRoom(roomId);
+    ref.invalidate(roomProvider(roomId));
+    ref.invalidate(roomsProvider(groupId));
+    return room;
+  }
+
   /// Deletes [roomId] (group owner only) and refreshes the rooms list.
   Future<void> deleteRoom(String roomId, {required String groupId}) async {
     await RoomService().deleteRoom(roomId);

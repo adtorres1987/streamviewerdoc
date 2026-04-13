@@ -1,15 +1,18 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 import '../../core/constants.dart';
 import '../../models/sync_event.dart';
 import '../../providers/sync_provider.dart';
+import '../../services/room_service.dart';
 import '../../widgets/page_indicator.dart';
 import '../../widgets/room_overlay.dart';
 import '../../widgets/sync_banner.dart';
@@ -77,6 +80,12 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
 
   bool _showOverlay = false;
 
+  /// True while the host is uploading the PDF to the server.
+  bool _uploading = false;
+
+  /// True while the viewer is downloading the PDF from the server-provided URL.
+  bool _downloading = false;
+
   /// Room code displayed in the overlay — populated from [RoomJoinedEvent].
   String _roomCode = '';
 
@@ -123,14 +132,24 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
     final path = result.files.single.path;
     if (path == null) return;
 
-    final fileName = result.files.single.name;
+    // Show the PDF locally immediately so the host can see it while uploading.
+    setState(() {
+      _pdfPath = path;
+      _uploading = true;
+    });
 
-    setState(() => _pdfPath = path);
-
-    // Notify the server so it registers the PDF name for this session.
-    ref
-        .read(syncNotifierProvider.notifier)
-        .notifyRoomCreated(widget.roomId, fileName);
+    try {
+      // Upload to the backend.  The server will broadcast PDF_READY to viewers.
+      await RoomService().uploadPdf(widget.roomId, File(path));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al subir el PDF: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
   }
 
   // --------------------------------------------------------------------------
@@ -160,6 +179,12 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
         _suppressNextScroll = true;
         _pdfController.jumpToPage(yourLastPage);
 
+      case PdfReadyEvent(:final pdfUrl, :final fileName):
+        // Viewer-only: the host has uploaded a PDF — download and load it.
+        if (widget.role != 'viewer') break;
+        if (!mounted) break;
+        _downloadAndLoadPdf(pdfUrl, fileName);
+
       case RoomClosedEvent():
         _showSessionClosedDialog();
 
@@ -168,6 +193,35 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
         // are handled by SyncNotifier and reflected in SyncState — the banner
         // builder below reacts to them automatically.
         break;
+    }
+  }
+
+  // --------------------------------------------------------------------------
+  // Viewer PDF download
+  // --------------------------------------------------------------------------
+
+  Future<void> _downloadAndLoadPdf(String url, String fileName) async {
+    if (!mounted) return;
+    setState(() => _downloading = true);
+
+    try {
+      final tempDir = await getTemporaryDirectory();
+      final savePath = '${tempDir.path}/$fileName';
+
+      // Download the file from the server-provided URL.
+      await Dio().download(url, savePath);
+
+      if (mounted) {
+        setState(() => _pdfPath = savePath);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al descargar el PDF: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
     }
   }
 
@@ -220,7 +274,7 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
     showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
+      builder: (dialogCtx) => AlertDialog(
         title: const Text('Sesion terminada'),
         content: const Text(
           'El host no reconecto a tiempo. La sesion fue cerrada.',
@@ -228,8 +282,14 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
         actions: [
           TextButton(
             onPressed: () {
-              Navigator.of(context).pop();
-              context.pop();
+              // Use dialogCtx to dismiss the dialog from the root navigator.
+              // Using 'context' (State context) here would find GoRouter's
+              // navigator and accidentally pop the room route instead of
+              // the dialog, causing a double-pop and "nothing to pop".
+              Navigator.of(dialogCtx).pop();
+              if (context.mounted && context.canPop()) {
+                context.pop();
+              }
             },
             child: const Text('Cerrar'),
           ),
@@ -355,12 +415,26 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
                           ),
                         ],
                       )
-                    : const Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircularProgressIndicator(),
-                          SizedBox(height: 16),
-                          Text('Esperando al host...'),
+                          const Icon(Icons.picture_as_pdf_outlined,
+                              size: 64, color: Color(0xFF4F46E5)),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Esperando al host...',
+                            style: Theme.of(context).textTheme.titleMedium,
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'El PDF se cargará automáticamente cuando el host inicie la sesión.',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: Colors.grey[600]),
+                            textAlign: TextAlign.center,
+                          ),
                         ],
                       ),
               ),
@@ -389,6 +463,17 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
             right: 0,
             child: _buildBanner(syncState),
           ),
+
+          // ------------------------------------------------------------------
+          // Upload / download loading overlay
+          // ------------------------------------------------------------------
+          if (_uploading || _downloading)
+            const Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black45,
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
         ],
       ),
     );
@@ -415,7 +500,9 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
         ),
 
       BannerState.sessionClosed => SessionClosedBanner(
-          onClose: () => context.pop(),
+          onClose: () {
+            if (context.canPop()) context.pop();
+          },
         ),
     };
   }

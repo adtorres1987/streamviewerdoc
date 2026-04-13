@@ -38,6 +38,9 @@ dependencies:
   # File selection (used in Phase 8 for PDF upload)
   file_picker: ^8.0.0
 
+  # Temp directory access for viewer PDF download
+  path_provider: ^2.1.0
+
   # Date formatting
   intl: ^0.19.0
 

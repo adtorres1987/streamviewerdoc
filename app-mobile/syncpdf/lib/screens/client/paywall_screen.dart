@@ -77,7 +77,13 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
                 '¡Suscripción iniciada! Periodo de prueba activo.'),
           ),
         );
-        context.pop();
+        // PaywallScreen may be shown via GoRouter redirect (go), leaving no
+        // parent route to pop back to. Fall back to going home.
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go('/home');
+        }
       }
     } catch (e) {
       if (mounted) {

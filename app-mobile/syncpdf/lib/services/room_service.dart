@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -57,9 +59,51 @@ class RoomService {
     return Room.fromJson(data as Map<String, dynamic>);
   }
 
+  /// PATCH /rooms/:id/reopen — reopens a closed room (host only).
+  Future<Room> reopenRoom(String id) async {
+    final data = await _patch('/rooms/$id/reopen');
+    return Room.fromJson(data as Map<String, dynamic>);
+  }
+
   /// DELETE /rooms/:id — deletes the room (group owner only).
   Future<void> deleteRoom(String id) async {
     await _delete('/rooms/$id');
+  }
+
+  /// POST /rooms/:id/pdf — uploads [file] as multipart form-data.
+  ///
+  /// Field name must be `pdf` (matches the backend multer config).
+  /// Returns the [pdfUrl] from the server response so the caller can log it
+  /// or display it; the server also broadcasts PDF_READY to all viewers in the
+  /// room automatically.
+  Future<String> uploadPdf(String roomId, File file) async {
+    try {
+      final token = await _storage.read(key: AppConstants.tokenStorageKey);
+      final formData = FormData.fromMap({
+        'pdf': await MultipartFile.fromFile(
+          file.path,
+          filename: file.uri.pathSegments.last,
+        ),
+      });
+
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/rooms/$roomId/pdf',
+        data: formData,
+        options: Options(
+          headers: {
+            'Authorization': 'Bearer $token',
+            // Content-Type is set automatically by dio for FormData.
+          },
+        ),
+      );
+
+      final data = (response.data ?? {})['data'] as Map<String, dynamic>;
+      return data['pdfUrl'] as String;
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    } catch (e) {
+      throw UnknownException(e.toString());
+    }
   }
 
   // --------------------------------------------------------------------------
