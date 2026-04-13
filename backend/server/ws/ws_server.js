@@ -46,7 +46,7 @@ async function handleCreateRoom(ws, payload) {
     // Verify room exists in DB and this user is the host
     const { data: room, error } = await supabase
       .from('rooms')
-      .select('id, code, host_id, status, group_id')
+      .select('id, code, host_id, status, group_id, last_page')
       .eq('id', roomId)
       .single();
 
@@ -62,7 +62,7 @@ async function handleCreateRoom(ws, payload) {
       return sendError(ws, 'ROOM_CLOSED', 'La sala está cerrada.');
     }
 
-    initRoom(roomId, ws.userId, ws.userName, ws);
+    initRoom(roomId, ws.userId, ws.userName, ws, room.last_page || 1);
 
     sendWs(ws, { type: 'ROOM_JOINED', roomId, code: room.code });
   } catch (err) {
@@ -79,10 +79,10 @@ async function handleJoinRoom(ws, payload) {
   }
 
   try {
-    // Verify room exists in DB
+    // Verify room exists in DB — last_page is the persisted host position
     const { data: room, error: roomError } = await supabase
       .from('rooms')
-      .select('id, code, host_id, status, group_id')
+      .select('id, code, host_id, status, group_id, last_page')
       .eq('id', roomId)
       .single();
 
@@ -134,7 +134,7 @@ async function handleJoinRoom(ws, payload) {
       //   - Reconnect (room in host_disconnected state): clears close timer,
       //     broadcasts HOST_RECONNECTED to viewers, persists active status
       // This ensures the close timer is ALWAYS cancelled on host reconnect.
-      initRoom(roomId, ws.userId, ws.userName, ws);
+      initRoom(roomId, ws.userId, ws.userName, ws, room.last_page || 1);
       sendWs(ws, { type: 'ROOM_JOINED', roomId, code: room.code });
     } else {
       // Viewer join
@@ -149,7 +149,13 @@ async function handleJoinRoom(ws, payload) {
       } else if (isRejoin) {
         sendWs(ws, { type: 'REJOIN_CONTEXT', ...context });
       } else {
-        sendWs(ws, { type: 'ROOM_JOINED', roomId, code: room.code });
+        // Fresh join — include the host's persisted page from DB so the viewer
+        // can be offered to jump there.  In-memory lastPage may be higher if
+        // the host scrolled within the debounce window; take the max.
+        const memContext = getRoomContext(roomId, ws.userId);
+        const dbPage = room.last_page || 1;
+        const hostPage = memContext ? Math.max(memContext.hostPage, dbPage) : dbPage;
+        sendWs(ws, { type: 'ROOM_JOINED', roomId, code: room.code, hostPage });
       }
 
       // If the room already has a PDF (host uploaded before this viewer joined),

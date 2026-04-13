@@ -94,6 +94,17 @@ async function persistViewerPosition(roomId, userId, page, offsetY) {
   }
 }
 
+async function persistHostPage(roomId, page) {
+  const { error } = await supabase
+    .from('rooms')
+    .update({ last_page: page })
+    .eq('id', roomId);
+
+  if (error) {
+    console.error(`[room_manager] persistHostPage error (room=${roomId}):`, error);
+  }
+}
+
 async function persistHostPosition(roomId, page, offsetY) {
   const { error } = await supabase
     .from('rooms')
@@ -227,10 +238,13 @@ function findRoomForSocket(socket) {
 // ---------------------------------------------------------------------------
 
 /**
- * initRoom — called when a host sends CREATE_ROOM.
+ * initRoom — called when a host sends JOIN_ROOM / CREATE_ROOM.
  * The room record must already exist in DB (created via REST API).
+ *
+ * @param {number} [dbLastPage=1] - last_page read from DB, used to seed
+ *   in-memory state on fresh init so the value survives server restarts.
  */
-function initRoom(roomId, hostId, hostName, hostSocket) {
+function initRoom(roomId, hostId, hostName, hostSocket, dbLastPage = 1) {
   // If room already exists in memory (e.g. host reconnect), update socket
   if (rooms.has(roomId)) {
     const room = rooms.get(roomId);
@@ -285,13 +299,14 @@ function initRoom(roomId, hostId, hostName, hostSocket) {
     return;
   }
 
-  // Fresh room initialization
+  // Fresh room initialization — seed lastPage from DB so the value survives
+  // server restarts (host may have been on page 5 before the restart).
   const participants = new Map();
   participants.set(hostId, {
     socket: hostSocket,
     role: 'host',
     syncState: 'synced',
-    lastPage: 1,
+    lastPage: dbLastPage,
     lastOffset: 0,
     name: hostName,
   });
@@ -301,7 +316,7 @@ function initRoom(roomId, hostId, hostName, hostSocket) {
     hostName,
     hostSocket,
     status: 'active',
-    lastPage: 1,
+    lastPage: dbLastPage,
     lastOffset: 0,
     pdfUrl: null,
     fileName: null,
@@ -374,7 +389,9 @@ function handleHostScroll(roomId, page, offsetY) {
     }
   }
 
-  // Debounced persist
+  // Persist last_page immediately so joining viewers always see the correct
+  // page even within the debounce window.  The debounced write handles offset.
+  persistHostPage(roomId, page);
   scheduleHostScrollPersist(roomId, page, offsetY);
 }
 

@@ -31,14 +31,23 @@ sealed class SyncEvent {
 
 /// Server acknowledges a successful JOIN_ROOM.
 class RoomJoinedEvent extends SyncEvent {
-  const RoomJoinedEvent({required this.roomId, required this.code});
+  const RoomJoinedEvent({
+    required this.roomId,
+    required this.code,
+    this.hostPage = 1,
+  });
 
   final String roomId;
   final String code;
 
+  /// Host's current page at the moment the viewer joined.
+  /// Only sent for fresh viewer joins (not host joins, not rejoins).
+  final int hostPage;
+
   factory RoomJoinedEvent.fromJson(Map<String, dynamic> json) => RoomJoinedEvent(
         roomId: json['roomId'] as String,
         code: json['code'] as String,
+        hostPage: (json['hostPage'] as num?)?.toInt() ?? 1,
       );
 }
 

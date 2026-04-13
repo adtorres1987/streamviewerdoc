@@ -48,6 +48,7 @@ class SyncState {
     this.reconnectingHost,
     this.lastHostPage,
     this.lastHostOffset,
+    this.joinHostPage,
   });
 
   final bool isConnected;
@@ -62,6 +63,10 @@ class SyncState {
   final int? lastHostPage;
   final double? lastHostOffset;
 
+  /// Host's page at the moment this viewer freshly joined.
+  /// Non-null only when > 1.  Cleared once the viewer has acted on it.
+  final int? joinHostPage;
+
   SyncState copyWith({
     bool? isConnected,
     ViewerSyncState? viewerState,
@@ -70,8 +75,9 @@ class SyncState {
     HostInfo? reconnectingHost,
     int? lastHostPage,
     double? lastHostOffset,
-    // Pass `clearReconnectingHost: true` to nullify `reconnectingHost`.
+    int? joinHostPage,
     bool clearReconnectingHost = false,
+    bool clearJoinHostPage = false,
   }) {
     return SyncState(
       isConnected: isConnected ?? this.isConnected,
@@ -83,6 +89,7 @@ class SyncState {
           : (reconnectingHost ?? this.reconnectingHost),
       lastHostPage: lastHostPage ?? this.lastHostPage,
       lastHostOffset: lastHostOffset ?? this.lastHostOffset,
+      joinHostPage: clearJoinHostPage ? null : (joinHostPage ?? this.joinHostPage),
     );
   }
 
@@ -193,6 +200,11 @@ class SyncNotifier extends _$SyncNotifier {
     state = state.copyWith(bannerState: BannerState.hidden);
   }
 
+  /// Clears [SyncState.joinHostPage] after the viewer has acted on the offer.
+  void clearJoinHostPage() {
+    state = state.copyWith(clearJoinHostPage: true);
+  }
+
   /// Tells the server the host is opening a new session for [roomId] with
   /// [fileName].  Called by [PDFViewerScreen] after the host picks a PDF.
   void notifyRoomCreated(String roomId, String fileName) {
@@ -215,9 +227,14 @@ class SyncNotifier extends _$SyncNotifier {
 
   void _handleEvent(SyncEvent event) {
     switch (event) {
-      case RoomJoinedEvent():
+      case RoomJoinedEvent(:final hostPage):
         // Connection is fully established.
-        state = state.copyWith(isConnected: true);
+        // If the host is already past page 1, store it so PDFViewerScreen
+        // can offer to jump there once the PDF loads.
+        state = state.copyWith(
+          isConnected: true,
+          joinHostPage: hostPage > 1 ? hostPage : null,
+        );
 
       case ParticipantsEvent(:final count):
         state = state.copyWith(participantCount: count);

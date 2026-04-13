@@ -65,6 +65,7 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
   /// broadcast the position it just received from the host.
   bool _suppressNextScroll = false;
 
+
   // --------------------------------------------------------------------------
   // WebSocket subscription & timers
   // --------------------------------------------------------------------------
@@ -163,11 +164,8 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
         if (mounted) setState(() => _roomCode = code);
 
       case SyncScrollEvent(:final page):
-        // Viewer-only: apply the host's scroll position.
-        // offsetY is received by SyncScrollEvent but SfPdfViewer does not
-        // expose a public scrollTo(offset) for live programmatic use.
-        // The page jump is the primary sync signal; sub-page offset sync
-        // is a future improvement via initialScrollOffset on rebuild.
+        // Viewer-only: jump to the host's current page.
+        // Single-page layout mode is used, so page sync is sufficient.
         if (widget.role != 'viewer') break;
         if (!mounted) break;
         _suppressNextScroll = true;
@@ -184,6 +182,7 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
         if (widget.role != 'viewer') break;
         if (!mounted) break;
         _downloadAndLoadPdf(pdfUrl, fileName);
+
 
       case RoomClosedEvent():
         _showSessionClosedDialog();
@@ -215,7 +214,20 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
       await Dio().download(url, savePath);
 
       if (mounted) {
-        setState(() => _pdfPath = savePath);
+        setState(() {
+          _pdfPath = savePath;
+        });
+        // Offer to jump to the host's page if they were already ahead.
+        // joinHostPage is stored in SyncState (set by SyncNotifier when
+        // ROOM_JOINED arrived) so it is never lost to a timing race.
+        final hostPage = ref.read(syncNotifierProvider).joinHostPage;
+        if (hostPage != null) {
+          ref.read(syncNotifierProvider.notifier).clearJoinHostPage();
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _showGoToHostPageDialog(hostPage);
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -229,10 +241,10 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
   }
 
   // --------------------------------------------------------------------------
-  // Host scroll handler (50 ms debounce)
+  // Host page-change handler (50 ms debounce)
   // --------------------------------------------------------------------------
 
-  void _onHostScrolled() {
+  void _onHostPageChanged(int page) {
     if (_suppressNextScroll) {
       _suppressNextScroll = false;
       return;
@@ -242,30 +254,56 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
       const Duration(milliseconds: AppConstants.scrollDebounceMsHost),
       () {
         if (!mounted) return;
-        final page = _pdfController.pageNumber;
-        final offsetY = _pdfController.scrollOffset.dy;
-        ref.read(syncNotifierProvider.notifier).broadcastScroll(page, offsetY);
+        ref.read(syncNotifierProvider.notifier).broadcastScroll(page, 0);
       },
     );
   }
 
   // --------------------------------------------------------------------------
-  // Viewer free-scroll handler
+  // Viewer free-scroll handler (page persistence)
   // --------------------------------------------------------------------------
 
-  void _onViewerScrolled() {
+  void _onViewerPageChanged(int page) {
     if (_suppressNextScroll) {
       _suppressNextScroll = false;
       return;
     }
     final syncState = ref.read(syncNotifierProvider).viewerState;
     if (syncState == ViewerSyncState.free) {
-      final page = _pdfController.pageNumber;
-      final offsetY = _pdfController.scrollOffset.dy;
       ref
           .read(syncNotifierProvider.notifier)
-          .broadcastViewerScroll(page, offsetY);
+          .broadcastViewerScroll(page, 0);
     }
+  }
+
+  // --------------------------------------------------------------------------
+  // Go-to-host-page dialog (shown once after PDF loads for a viewer)
+  // --------------------------------------------------------------------------
+
+  void _showGoToHostPageDialog(int hostPage) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Unirse al host'),
+        content: Text(
+          'El host está en la página $hostPage.\n¿Quieres ir a esa página?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(),
+            child: const Text('No'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogCtx).pop();
+              _suppressNextScroll = true;
+              _pdfController.jumpToPage(hostPage);
+            },
+            child: const Text('Ir ahí'),
+          ),
+        ],
+      ),
+    );
   }
 
   // --------------------------------------------------------------------------
@@ -367,31 +405,21 @@ class _PDFViewerScreenState extends ConsumerState<PDFViewerScreen>
           // Main content: PDF viewer or placeholder
           // ------------------------------------------------------------------
           if (_pdfPath != null)
-            NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                // React on scroll-end to avoid firing too aggressively.
-                if (notification is ScrollEndNotification) {
-                  if (widget.role == 'host') {
-                    _onHostScrolled();
-                  } else {
-                    _onViewerScrolled();
-                  }
+            SfPdfViewer.file(
+              File(_pdfPath!),
+              controller: _pdfController,
+              pageLayoutMode: PdfPageLayoutMode.single,
+              scrollDirection: PdfScrollDirection.horizontal,
+              onPageChanged: (details) {
+                final page = details.newPageNumber;
+                if (widget.role == 'host') {
+                  _onHostPageChanged(page);
+                } else {
+                  _onViewerPageChanged(page);
                 }
-                return false; // Let the notification continue to bubble.
+                // Trigger a rebuild so PageIndicator updates.
+                if (mounted) setState(() {});
               },
-              child: SfPdfViewer.file(
-                File(_pdfPath!),
-                controller: _pdfController,
-                onPageChanged: (details) {
-                  if (widget.role == 'host') {
-                    _onHostScrolled();
-                  } else {
-                    _onViewerScrolled();
-                  }
-                  // Trigger a rebuild so PageIndicator updates.
-                  if (mounted) setState(() {});
-                },
-              ),
             )
           else
             Center(
